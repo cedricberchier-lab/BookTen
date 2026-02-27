@@ -17,7 +17,7 @@ export async function fetchFairplayHtml(sport: Sport, d?: string): Promise<strin
     : `${FAIRPLAY_BASE}/${page}?responsive=false`
 
   const res = await fetch(url, {
-    next: { revalidate: 900 }, // cache for 15 minutes
+    next: { revalidate: 60 }, // cache for 1 minute
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; FairPlayReader/1.0)",
       Accept: "text/html",
