@@ -2,31 +2,61 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
+import { CalendarDays, RefreshCw, BookMarked } from "lucide-react"
 import type { AvailabilityResponse, Slot, Sport } from "@/types"
 import { SPORTS } from "@/types"
 import { getUserConfig, setUserConfig } from "@/lib/user-config"
 
+// ── Day label helpers ────────────────────────────────────────────────────────
+
+const DAY_LETTER: Record<string, string> = {
+  Lu: "L", Ma: "M", Me: "M", Je: "J", Ve: "V", Sa: "S", Di: "D",
+}
+const DAY_FULLNAME: Record<string, string> = {
+  Lu: "Lundi", Ma: "Mardi", Me: "Mercredi", Je: "Jeudi",
+  Ve: "Vendredi", Sa: "Samedi", Di: "Dimanche",
+}
+
+function parseDayLabel(label: string): { abbr: string; num: number } {
+  const [abbr, numStr] = label.trim().split(/\s+/)
+  return { abbr: abbr ?? "", num: parseInt(numStr ?? "0", 10) }
+}
+
+function resolveDayDate(label: string): Date {
+  const { num } = parseDayLabel(label)
+  const today = new Date()
+  const d = new Date(today)
+  if (num < today.getDate()) d.setMonth(d.getMonth() + 1)
+  d.setDate(num)
+  return d
+}
+
+// ── Slot status ──────────────────────────────────────────────────────────────
+
 function statusColor(status: Slot["status"]): string {
   switch (status) {
-    case "free":
-      return "bg-emerald-100 hover:bg-emerald-200 cursor-pointer border-emerald-300 text-emerald-800"
-    case "booked":
-      return "bg-red-50 border-red-200 text-red-700"
-    case "unavailable":
-      return "bg-gray-100 border-gray-200 text-gray-400"
-    case "mine":
-      return "bg-blue-100 hover:bg-blue-50 border-blue-300 text-blue-800 font-semibold"
+    case "free":        return "bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 cursor-pointer border-emerald-200 text-emerald-700"
+    case "booked":      return "bg-red-50 border-red-200 text-red-600"
+    case "unavailable": return "bg-gray-50 border-gray-200 text-gray-400"
+    case "mine":        return "bg-blue-50 border-blue-300 text-blue-700 font-semibold"
   }
 }
 
 function statusLabel(status: Slot["status"]): string {
   switch (status) {
-    case "free":      return "Libre"
-    case "booked":    return ""
+    case "free":        return "Libre"
+    case "booked":      return ""
     case "unavailable": return "—"
-    case "mine":      return "Moi"
+    case "mine":        return "Moi"
   }
 }
+
+function addOneHour(time: string): string {
+  const [h, m] = time.split(":").map(Number)
+  return `${String(h + 1).padStart(2, "0")}:${String(m ?? 0).padStart(2, "0")}`
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const [sport, setSport] = useState<Sport>("tennis_int")
@@ -35,16 +65,13 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [activeD, setActiveD] = useState<string | undefined>(undefined)
 
-  // Display name config
   const [displayName, setDisplayName] = useState("")
   const [nameInput, setNameInput] = useState("")
   const [showNameForm, setShowNameForm] = useState(false)
 
-  // Sync state
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
-  // Load displayName from localStorage on mount
   useEffect(() => {
     const config = getUserConfig()
     if (config?.displayName) {
@@ -100,10 +127,7 @@ export default function HomePage() {
   }
 
   const handleSync = async () => {
-    if (!displayName) {
-      setShowNameForm(true)
-      return
-    }
+    if (!displayName) { setShowNameForm(true); return }
     setSyncing(true)
     setSyncResult(null)
     try {
@@ -113,21 +137,11 @@ export default function HomePage() {
         body: JSON.stringify({ sport, d: activeD, displayName }),
       })
       const json = (await res.json()) as {
-        inserted?: number
-        updated?: number
-        message?: string
-        error?: string
-        date?: string
+        inserted?: number; updated?: number; message?: string; error?: string; date?: string
       }
-      if (json.error) {
-        setSyncResult(`Erreur : ${json.error}`)
-      } else if (json.message) {
-        setSyncResult(json.message)
-      } else {
-        setSyncResult(
-          `Sync ${json.date} — ${json.inserted} nouvelle(s), ${json.updated} mise(s) à jour`
-        )
-      }
+      if (json.error) setSyncResult(`Erreur : ${json.error}`)
+      else if (json.message) setSyncResult(json.message)
+      else setSyncResult(`Sync ${json.date} — ${json.inserted} nouvelle(s), ${json.updated} mise(s) à jour`)
     } catch (err) {
       setSyncResult(err instanceof Error ? err.message : "Sync failed")
     } finally {
@@ -135,142 +149,175 @@ export default function HomePage() {
     }
   }
 
+  // Derive active day info for the header
+  const activeDay = data?.days.find((d) => d.active)
+  const activeDayDate = activeDay ? resolveDayDate(activeDay.label) : new Date()
+  const { abbr: activeDayAbbr } = activeDay ? parseDayLabel(activeDay.label) : { abbr: "Ve" }
+  const activeDayFullName = DAY_FULLNAME[activeDayAbbr] ?? activeDayAbbr
+  const activeDayFormatted = activeDayDate.toLocaleDateString("fr-CH", {
+    day: "numeric", month: "long", year: "numeric",
+  })
+
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto max-w-6xl space-y-5">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-foreground">FairPlay Court Booker</h1>
-            <p className="text-sm text-muted-foreground">Centre FairPlay</p>
-          </div>
+    <div className="min-h-screen bg-white">
+
+      {/* ── Top bar ─────────────────────────────────────────────────── */}
+      <div className="px-4 pt-5 pb-3">
+        <div className="flex items-start justify-between">
+          {/* Left: Today + Calendar */}
           <div className="flex items-center gap-2">
-            {displayName && (
-              <button
-                onClick={() => setShowNameForm((v) => !v)}
-                className="rounded-lg bg-muted px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary"
-                title="Modifier le nom"
-              >
-                {displayName}
-              </button>
-            )}
+            <button
+              onClick={() => { setActiveD(undefined); setSyncResult(null) }}
+              className="rounded-full bg-gray-100 px-4 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-200 active:bg-gray-300 transition-colors"
+            >
+              Aujourd&apos;hui
+            </button>
+            <button
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              title="Calendrier"
+            >
+              <CalendarDays size={16} />
+            </button>
+          </div>
+
+          {/* Center: Day name + date */}
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-gray-900 leading-tight">{activeDayFullName}</h1>
+            <p className="text-xs text-gray-400 mt-0.5">{loading ? "…" : activeDayFormatted}</p>
+          </div>
+
+          {/* Right: Sync + Bookings */}
+          <div className="flex items-center gap-1.5">
             <button
               onClick={handleSync}
               disabled={syncing}
-              className="rounded-lg bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+              title="Synchroniser mes réservations"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 active:bg-gray-300 transition-colors disabled:opacity-40"
             >
-              {syncing ? "Sync…" : "↓ Sync"}
+              <RefreshCw size={15} className={syncing ? "animate-spin" : ""} />
             </button>
             <Link
               href="/bookings"
-              className="rounded-lg bg-muted px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary"
+              title="Mes réservations"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 active:bg-gray-300 transition-colors"
             >
-              Mes réservations
+              <BookMarked size={15} />
             </Link>
           </div>
         </div>
+      </div>
 
-        {/* Display name form */}
-        {showNameForm && (
-          <div className="rounded-xl border bg-card p-4 space-y-3">
-            <p className="text-sm font-medium">
-              Votre nom FairPlay{" "}
-              <span className="font-normal text-muted-foreground">
-                (tel qu'il apparaît dans les cellules du tableau, ex: C Berchier)
-              </span>
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveDisplayName()}
-                placeholder="Ex: C Berchier"
-                className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                autoFocus
-              />
+      {/* ── Day strip ───────────────────────────────────────────────── */}
+      <div className="px-2 pb-4">
+        <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide px-2">
+          {(data?.days ?? []).map((day) => {
+            const { abbr, num } = parseDayLabel(day.label)
+            const letter = DAY_LETTER[abbr] ?? abbr[0] ?? "?"
+            return (
               <button
-                onClick={saveDisplayName}
-                disabled={!nameInput.trim()}
-                className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 disabled:opacity-40"
+                key={day.label}
+                onClick={() => setActiveD(day.d)}
+                className="flex min-w-[40px] flex-col items-center gap-1 py-1 transition-opacity active:opacity-70"
               >
-                Enregistrer
+                <span
+                  className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
+                    day.active
+                      ? "bg-gray-900 text-white"
+                      : "text-gray-500 hover:bg-gray-100"
+                  }`}
+                >
+                  {letter}
+                </span>
+                <span className={`text-xs ${day.active ? "font-semibold text-gray-900" : "text-gray-400"}`}>
+                  {num}
+                </span>
               </button>
-            </div>
-          </div>
-        )}
+            )
+          })}
+        </div>
+      </div>
 
-        {/* Sync result */}
-        {syncResult && (
-          <div className="rounded-lg border bg-muted/50 px-4 py-2 text-sm text-muted-foreground">
-            {syncResult}
+      {/* ── Display name form ────────────────────────────────────────── */}
+      {showNameForm && (
+        <div className="mx-4 mb-4 rounded-2xl border bg-gray-50 p-4 space-y-3">
+          <p className="text-sm text-gray-700">
+            Votre nom FairPlay{" "}
+            <span className="text-gray-400">(ex : C Berchier)</span>
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveDisplayName()}
+              placeholder="C Berchier"
+              className="flex-1 rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+              autoFocus
+            />
+            <button
+              onClick={saveDisplayName}
+              disabled={!nameInput.trim()}
+              className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40"
+            >
+              OK
+            </button>
           </div>
-        )}
+          {displayName && (
+            <button onClick={() => setShowNameForm(false)} className="text-xs text-gray-400 hover:text-gray-600">
+              Annuler
+            </button>
+          )}
+        </div>
+      )}
 
-        {/* Sport switcher */}
-        <div className="flex flex-wrap gap-2 border-b pb-4">
+      {/* ── Sync result ──────────────────────────────────────────────── */}
+      {syncResult && (
+        <div className="mx-4 mb-3 rounded-xl bg-gray-50 px-4 py-2 text-xs text-gray-500">
+          {syncResult}
+        </div>
+      )}
+
+      {/* ── Sport tabs ───────────────────────────────────────────────── */}
+      <div className="border-b border-gray-100">
+        <div className="flex gap-0 overflow-x-auto scrollbar-hide px-4">
           {SPORTS.map((s) => (
             <button
               key={s.id}
               onClick={() => handleSportChange(s.id)}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              className={`shrink-0 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 ${
                 sport === s.id
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  ? "border-gray-900 text-gray-900"
+                  : "border-transparent text-gray-400 hover:text-gray-600"
               }`}
             >
               {s.label}
             </button>
           ))}
         </div>
+      </div>
 
-        {/* Day navigator */}
-        {data && (
-          <div className="flex flex-wrap items-center gap-2">
-            {data.days.map((day) => (
-              <button
-                key={day.label}
-                onClick={() => setActiveD(day.d)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  day.active
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-secondary"
-                }`}
-              >
-                {day.label}
-              </button>
-            ))}
-            <button
-              onClick={() => void load(sport, activeD, displayName || undefined)}
-              className="ml-auto rounded-lg bg-muted px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary"
-              title="Rafraîchir"
-            >
-              ↻
-            </button>
-          </div>
-        )}
+      {/* ── Content area ─────────────────────────────────────────────── */}
+      <div className="px-4 py-4 space-y-3">
 
+        {/* States */}
         {loading && (
-          <div className="text-sm text-muted-foreground animate-pulse">
-            Chargement du tableau…
-          </div>
+          <p className="text-center text-sm text-gray-400 py-8 animate-pulse">Chargement…</p>
         )}
-
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-            Erreur : {error}
+          <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+            {error}
           </div>
         )}
 
         {/* Grid */}
         {!loading && data && data.slots.length > 0 && (
-          <div className="overflow-x-auto rounded-xl border bg-card shadow-sm">
+          <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="p-3 text-left font-medium text-muted-foreground">Heure</th>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 whitespace-nowrap">Heure</th>
                   {data.courts.map((court) => (
-                    <th key={court} className="p-3 text-center font-medium text-muted-foreground whitespace-nowrap">
+                    <th key={court} className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 whitespace-nowrap">
                       {court}
                     </th>
                   ))}
@@ -278,27 +325,25 @@ export default function HomePage() {
               </thead>
               <tbody>
                 {data.times.map((time, timeIndex) => (
-                  <tr key={time} className="border-b last:border-0 hover:bg-muted/20">
-                    <td className="p-3 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                      {time}–{data.times[timeIndex + 1] ?? addOneHour(time)}
+                  <tr key={time} className="border-b border-gray-50 last:border-0">
+                    <td className="px-3 py-1.5 font-mono text-xs text-gray-400 whitespace-nowrap">
+                      {time}
                     </td>
                     {data.courts.map((court) => {
                       const slot = data.slots.find(
                         (s) => s.court === court && s.startTime === time
                       )
-                      if (!slot) {
-                        return (
-                          <td key={court} className="p-1.5">
-                            <div className="rounded border bg-gray-100 px-2 py-3 text-center text-xs text-gray-400">—</div>
-                          </td>
-                        )
-                      }
+                      if (!slot) return (
+                        <td key={court} className="px-1 py-1">
+                          <div className="rounded-xl border border-gray-100 bg-gray-50 py-3 text-center text-xs text-gray-300">—</div>
+                        </td>
+                      )
                       return (
-                        <td key={court} className="p-1.5">
+                        <td key={court} className="px-1 py-1">
                           <div
                             onClick={() => handleSlotClick(slot)}
                             title={slot.occupants}
-                            className={`rounded border px-2 py-3 text-center text-xs transition-colors ${statusColor(slot.status)}`}
+                            className={`rounded-xl border py-3 text-center text-xs transition-colors ${statusColor(slot.status)}`}
                           >
                             {slot.occupants ? slot.occupants : statusLabel(slot.status)}
                           </div>
@@ -314,31 +359,32 @@ export default function HomePage() {
 
         {/* Legend */}
         {data && (
-          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-400 pt-1">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100" />
-              Libre (cliquer pour réserver)
+              <span className="inline-block h-2.5 w-2.5 rounded-full border border-emerald-200 bg-emerald-50" />
+              Libre
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-blue-300 bg-blue-100" />
+              <span className="inline-block h-2.5 w-2.5 rounded-full border border-blue-200 bg-blue-50" />
               Ma réservation
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-red-200 bg-red-50" />
+              <span className="inline-block h-2.5 w-2.5 rounded-full border border-red-100 bg-red-50" />
               Occupé
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3 rounded border border-gray-200 bg-gray-100" />
-              Indisponible
-            </span>
           </div>
+        )}
+
+        {/* Display name toggle */}
+        {displayName && !showNameForm && (
+          <button
+            onClick={() => setShowNameForm(true)}
+            className="text-xs text-gray-300 hover:text-gray-500 transition-colors"
+          >
+            Connecté en tant que {displayName}
+          </button>
         )}
       </div>
     </div>
   )
-}
-
-function addOneHour(time: string): string {
-  const [h, m] = time.split(":").map(Number)
-  return `${String(h + 1).padStart(2, "0")}:${String(m ?? 0).padStart(2, "0")}`
 }
