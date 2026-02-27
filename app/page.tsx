@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import { CalendarDays, RefreshCw, BookMarked } from "lucide-react"
 import type { AvailabilityResponse, Slot, Sport } from "@/types"
@@ -56,6 +56,71 @@ function addOneHour(time: string): string {
   return `${String(h + 1).padStart(2, "0")}:${String(m ?? 0).padStart(2, "0")}`
 }
 
+// ── Hour scroll-snap picker ───────────────────────────────────────────────────
+
+const ITEM_W = 52 // px per hour cell
+
+function HourScrollPicker({
+  value,
+  onChange,
+  min = 8,
+  max = 22,
+}: {
+  value: number
+  onChange: (h: number) => void
+  min?: number
+  max?: number
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const hours = Array.from({ length: max - min + 1 }, (_, i) => min + i)
+  const touching = useRef(false)
+
+  const snap = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    const idx = Math.round(el.scrollLeft / ITEM_W)
+    const clamped = Math.max(0, Math.min(hours.length - 1, idx))
+    onChange(min + clamped)
+  }, [min, hours.length, onChange])
+
+  useEffect(() => {
+    if (touching.current) return
+    const el = ref.current
+    if (!el) return
+    const target = (value - min) * ITEM_W
+    if (Math.abs(el.scrollLeft - target) > 2) {
+      el.scrollTo({ left: target, behavior: "smooth" })
+    }
+  }, [value, min])
+
+  return (
+    <div
+      ref={ref}
+      onScroll={snap}
+      onTouchStart={() => { touching.current = true }}
+      onTouchEnd={() => { touching.current = false; snap() }}
+      className="overflow-x-scroll scrollbar-hide flex items-center py-3"
+      style={{
+        scrollSnapType: "x mandatory",
+        paddingLeft: `calc(50% - ${ITEM_W / 2}px)`,
+        paddingRight: `calc(50% - ${ITEM_W / 2}px)`,
+      }}
+    >
+      {hours.map((h) => (
+        <div
+          key={h}
+          style={{ scrollSnapAlign: "center", minWidth: ITEM_W, width: ITEM_W }}
+          className={`text-center text-sm font-semibold select-none transition-colors ${
+            h === value ? "text-blue-500" : "text-gray-300"
+          }`}
+        >
+          {String(h).padStart(2, "0")}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -71,6 +136,9 @@ export default function HomePage() {
 
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
+
+  const [fromHour, setFromHour] = useState(8)
+  const [toHour, setToHour] = useState(22)
 
   useEffect(() => {
     const config = getUserConfig()
@@ -237,6 +305,52 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* ── Hour range picker ────────────────────────────────────────── */}
+      <div className="px-4 pb-3">
+        <div className="relative rounded-2xl border border-gray-100 bg-white overflow-hidden">
+
+          {/* Center highlight box */}
+          <div className="pointer-events-none absolute inset-0 flex justify-center z-10">
+            <div className="w-14 h-full rounded-xl border border-blue-200 bg-blue-50/60" />
+          </div>
+          {/* Center blue line */}
+          <div className="pointer-events-none absolute inset-0 flex justify-center z-20">
+            <div className="w-px h-full bg-blue-400/70" />
+          </div>
+
+          {/* From picker (top) */}
+          <HourScrollPicker
+            value={fromHour}
+            onChange={(h) => setFromHour(Math.min(h, toHour))}
+          />
+
+          {/* Tick divider */}
+          <div className="flex items-center px-0 h-4 overflow-hidden">
+            <div className="flex w-full justify-around items-end">
+              {Array.from({ length: 57 }, (_, i) => (
+                <div
+                  key={i}
+                  className={`w-px ${i % 4 === 0 ? "h-3 bg-gray-300" : "h-1.5 bg-gray-200"}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* To picker (bottom) */}
+          <HourScrollPicker
+            value={toHour}
+            onChange={(h) => setToHour(Math.max(h, fromHour))}
+          />
+        </div>
+
+        {/* Range label */}
+        <p className="text-center text-xs text-gray-400 mt-1.5">
+          {fromHour === 8 && toHour === 22
+            ? "Tous les créneaux"
+            : `De ${String(fromHour).padStart(2, "0")}h à ${String(toHour).padStart(2, "0")}h`}
+        </p>
+      </div>
+
       {/* ── Display name form ────────────────────────────────────────── */}
       {showNameForm && (
         <div className="mx-4 mb-4 rounded-2xl border bg-gray-50 p-4 space-y-3">
@@ -310,52 +424,58 @@ export default function HomePage() {
         )}
 
         {/* Grid */}
-        {!loading && data && data.slots.length > 0 && (
-          <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 whitespace-nowrap">Heure</th>
-                  {data.courts.map((court) => (
-                    <th key={court} className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 whitespace-nowrap">
-                      {court}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.times.map((time, timeIndex) => (
-                  <tr key={time} className="border-b border-gray-50 last:border-0">
-                    <td className="px-3 py-1.5 font-mono text-xs text-gray-400 whitespace-nowrap">
-                      {time}
-                    </td>
-                    {data.courts.map((court) => {
-                      const slot = data.slots.find(
-                        (s) => s.court === court && s.startTime === time
-                      )
-                      if (!slot) return (
-                        <td key={court} className="px-1 py-1">
-                          <div className="rounded-xl border border-gray-100 bg-gray-50 py-3 text-center text-xs text-gray-300">—</div>
-                        </td>
-                      )
-                      return (
-                        <td key={court} className="px-1 py-1">
-                          <div
-                            onClick={() => handleSlotClick(slot)}
-                            title={slot.occupants}
-                            className={`rounded-xl border py-3 text-center text-xs transition-colors ${statusColor(slot.status)}`}
-                          >
-                            {slot.occupants ? slot.occupants : statusLabel(slot.status)}
-                          </div>
-                        </td>
-                      )
-                    })}
+        {!loading && data && data.slots.length > 0 && (() => {
+          const visibleTimes = data.times.filter((t) => {
+            const h = parseInt(t.split(":")[0] ?? "0", 10)
+            return h >= fromHour && h <= toHour
+          })
+          return (
+            <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 whitespace-nowrap">Heure</th>
+                    {data.courts.map((court) => (
+                      <th key={court} className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 whitespace-nowrap">
+                        {court}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {visibleTimes.map((time) => (
+                    <tr key={time} className="border-b border-gray-50 last:border-0">
+                      <td className="px-3 py-1.5 font-mono text-xs text-gray-400 whitespace-nowrap">
+                        {time}
+                      </td>
+                      {data.courts.map((court) => {
+                        const slot = data.slots.find(
+                          (s) => s.court === court && s.startTime === time
+                        )
+                        if (!slot) return (
+                          <td key={court} className="px-1 py-1">
+                            <div className="rounded-xl border border-gray-100 bg-gray-50 py-3 text-center text-xs text-gray-300">—</div>
+                          </td>
+                        )
+                        return (
+                          <td key={court} className="px-1 py-1">
+                            <div
+                              onClick={() => handleSlotClick(slot)}
+                              title={slot.occupants}
+                              className={`rounded-xl border py-3 text-center text-xs transition-colors ${statusColor(slot.status)}`}
+                            >
+                              {slot.occupants ? slot.occupants : statusLabel(slot.status)}
+                            </div>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
 
         {/* Legend */}
         {data && (
