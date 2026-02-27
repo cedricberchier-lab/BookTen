@@ -410,6 +410,47 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* ── Availability heatmap ─────────────────────────────────────── */}
+      {data && !loading && (
+        <div className="px-4 pt-3 pb-1">
+          <div className="flex gap-px">
+            {data.times
+              .filter((t) => t >= "08:30" && t <= "21:30")
+              .map((time) => {
+                const hasFree = data.slots.some(
+                  (s) => s.startTime === time && s.status === "free"
+                )
+                const h = parseInt(time.split(":")[0] ?? "0", 10)
+                const isMinute00 = time.endsWith(":00")
+                const isInRange = h >= fromHour && h <= toHour
+                return (
+                  <div
+                    key={time}
+                    onClick={() => {
+                      setFromHour(Math.max(8, h - 1))
+                      setToHour(Math.min(22, h + 2))
+                    }}
+                    className="flex flex-col items-center gap-0.5 flex-1 cursor-pointer group"
+                  >
+                    <div
+                      className={`w-full rounded-sm transition-all ${
+                        hasFree
+                          ? "bg-emerald-400 group-active:bg-emerald-500"
+                          : "bg-gray-100 group-active:bg-gray-200"
+                      } ${isInRange ? "h-5" : "h-3 opacity-40"}`}
+                    />
+                    <span className={`text-[9px] leading-none transition-colors ${
+                      isInRange ? "text-gray-500" : "text-gray-300"
+                    }`}>
+                      {isMinute00 ? String(h).padStart(2, "0") : ""}
+                    </span>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
+
       {/* ── Content area ─────────────────────────────────────────────── */}
       <div className="px-4 py-4 space-y-3">
 
