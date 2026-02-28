@@ -101,6 +101,10 @@ export default function HomePage() {
   const lastTileIdRef     = useRef<string | null>(null)  // tile currently under pointer
   const pointerDownTileRef = useRef<string | null>(null)  // tile where pointerdown fired
   const doneTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Mirror current selections into a ref so pointer callbacks stay stale-free
+  const selRef = useRef<{ sport: Sport | null; day: string | null; time: string | null }>({
+    sport: null, day: null, time: null,
+  })
 
   // ── Config ────────────────────────────────────────────────────────────────
 
@@ -108,6 +112,10 @@ export default function HomePage() {
     const config = getUserConfig()
     if (config?.displayName) setDisplayName(config.displayName)
   }, [])
+
+  useEffect(() => {
+    selRef.current = { sport: selSport, day: selDay, time: selTime }
+  }, [selSport, selDay, selTime])
 
   // ── Data ──────────────────────────────────────────────────────────────────
 
@@ -240,7 +248,11 @@ export default function HomePage() {
     if (e.type === "pointermove") pointerDownTileRef.current = null
     cancelHold()
     lastTileIdRef.current = tileId
-    if (tileId && !disabled) startHold(tileId)
+
+    // Don't restart hold on an already-confirmed tile (prevents progress bar re-appearing)
+    const { sport, day, time } = selRef.current
+    const isSelected = tileId === sport || tileId === day || tileId === time
+    if (tileId && !disabled && !isSelected) startHold(tileId)
   }, [cancelHold, startHold])
 
   const handlePointerEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -253,9 +265,10 @@ export default function HomePage() {
 
       if (tileId && tileId === pointerDownTileRef.current && !disabled) {
         // "Hold and release" on same tile → confirm immediately
+        // livePos is intentionally kept so the rubber-band from the new dot
+        // starts drawing toward col3 without waiting for the next touch event.
         confirmHold(tileId)
         lastTileIdRef.current = null
-        setLivePos(null)
         return
       }
     }
