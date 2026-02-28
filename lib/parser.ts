@@ -103,7 +103,7 @@ export function parseFairplayHtml(html: string, displayName?: string): Availabil
       const names = rawTitle
         .split("\n")
         .map((n) => n.trim())
-        .filter(Boolean)
+        .filter((n) => /[a-zA-ZÀ-ÿ]/.test(n)) // discard placeholder lines like "0 0"
       const occupants = names.length > 0 ? names.join(" / ") : undefined
 
       // Mark as "mine" if ANY name matches the user's display name
