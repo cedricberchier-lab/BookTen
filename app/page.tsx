@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from "react"
 import type { ReactNode } from "react"
-import { ChevronLeft } from "lucide-react"
 import type { AvailabilityResponse, Slot, Sport } from "@/types"
 import { getUserConfig } from "@/lib/user-config"
 
@@ -67,7 +66,6 @@ function Tile({ id, heldId, holdPct, selected, disabled, onHoldStart, onHoldCanc
       style={{ touchAction: "none" }}
     >
       {children}
-      {/* Hold progress bar at tile bottom */}
       {isHeld && (
         <div
           className="absolute bottom-0 left-0 h-1.5 bg-emerald-500 rounded-r-full"
@@ -87,12 +85,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [displayName, setDisplayName] = useState("")
 
-  // Step: 0=location, 1=day, 2=time
-  const [step, setStep]     = useState(0)
-  const stepRef             = useRef(0)
-
   // Hold interaction
-  const [heldId, setHeldId] = useState<string | null>(null)
+  const [heldId, setHeldId]   = useState<string | null>(null)
   const [holdPct, setHoldPct] = useState(0)
   const holdRef = useRef<{ raf: number } | null>(null)
 
@@ -129,28 +123,37 @@ export default function HomePage() {
     void load(sport, activeD, displayName || undefined)
   }, [load, sport, activeD, displayName])
 
+  // ── Done detection ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (selSport && selDay && selTime) setDone(true)
+  }, [selSport, selDay, selTime])
+
   // ── Hold logic ────────────────────────────────────────────────────────────
 
   const confirmHold = useCallback((id: string) => {
-    const s = stepRef.current
     setHeldId(null)
     setHoldPct(0)
     holdRef.current = null
 
-    if (s === 0) {
+    const isSport = BOOK_SPORTS.some((s) => s.id === id)
+    const isTime  = FIXED_TIMES.includes(id)
+
+    if (isSport) {
       setSelSport(id as Sport)
       setSport(id as Sport)
       setActiveD(undefined)
-      stepRef.current = 1
-      setStep(1)
-    } else if (s === 1) {
+      setSelDay(null)
+      setSelTime(null)
+      setDone(false)
+    } else if (isTime) {
+      setSelTime(id)
+    } else {
+      // Day tile
       setSelDay(id)
       setActiveD(id || undefined)
-      stepRef.current = 2
-      setStep(2)
-    } else {
-      setSelTime(id)
-      setDone(true)
+      setSelTime(null)
+      setDone(false)
     }
   }, [])
 
@@ -179,13 +182,11 @@ export default function HomePage() {
     setHoldPct(0)
   }, [])
 
-  const goBack = useCallback(() => {
+  const reset = useCallback(() => {
     cancelHold()
-    const prev = Math.max(0, stepRef.current - 1)
-    stepRef.current = prev
-    setStep(prev)
-    if (prev <= 0) setSelSport(null)
-    if (prev <= 1) { setSelDay(null); setActiveD(undefined) }
+    setSelSport(null)
+    setSelDay(null)
+    setSelTime(null)
     setDone(false)
   }, [cancelHold])
 
@@ -203,22 +204,23 @@ export default function HomePage() {
   const firstFreeSlot = (time: string): Slot | undefined =>
     data?.slots.find((s) => s.startTime === time && s.status === "free")
 
-  // ── Connection line ────────────────────────────────────────────────────────
-  // SVG viewBox is 0 0 300 100 — Panel 0 = x:0-100, Panel 1 = x:100-200, Panel 2 = x:200-300
-  // Y values are approximate tile centres as % of container height (0–100 units)
+  // ── Connection line ───────────────────────────────────────────────────────
+  // viewBox "0 0 100 100" — 3 equal columns with gap-2
+  // Column centres: x ≈ 16.7, 50, 83.3
+  // Y values are approximate tile centres as % of column height
 
   const selSportIdx = selSport ? BOOK_SPORTS.findIndex((s) => s.id === selSport) : -1
   const selDayIdx   = selDay   ? days.findIndex((d) => (d.d ?? d.label) === selDay) : -1
   const selTimeIdx  = selTime  ? FIXED_TIMES.findIndex((t) => t === selTime) : -1
 
-  const SPORT_Y = [28, 73]
-  const DAY_Y   = [12, 31, 50, 69, 88]
-  const TIME_Y  = [10, 26, 42, 58, 74, 90]
+  const SPORT_Y = [26, 74]
+  const DAY_Y   = [10, 28, 50, 72, 90]
+  const TIME_Y  = [8, 24, 40, 56, 72, 88]
 
   type Pt = { x: number; y: number }
-  const sportPt: Pt | null = selSportIdx >= 0 ? { x: 50,  y: SPORT_Y[selSportIdx] ?? 50 } : null
-  const dayPt:   Pt | null = selDayIdx   >= 0 ? { x: 150, y: DAY_Y[selDayIdx]     ?? 50 } : null
-  const timePt:  Pt | null = selTimeIdx  >= 0 ? { x: 250, y: TIME_Y[selTimeIdx]   ?? 50 } : null
+  const sportPt: Pt | null = selSportIdx >= 0 ? { x: 100 / 6,       y: SPORT_Y[selSportIdx] ?? 50 } : null
+  const dayPt:   Pt | null = selDayIdx   >= 0 ? { x: 50,            y: DAY_Y[selDayIdx]     ?? 50 } : null
+  const timePt:  Pt | null = selTimeIdx  >= 0 ? { x: (100 * 5) / 6, y: TIME_Y[selTimeIdx]   ?? 50 } : null
   const connPts = [sportPt, dayPt, timePt].filter((p): p is Pt => p !== null)
 
   // ── Done screen ───────────────────────────────────────────────────────────
@@ -248,17 +250,7 @@ export default function HomePage() {
         >
           Réserver →
         </button>
-        <button
-          onClick={() => {
-            setDone(false)
-            stepRef.current = 0
-            setStep(0)
-            setSelSport(null)
-            setSelDay(null)
-            setSelTime(null)
-          }}
-          className="text-sm text-gray-400 hover:text-gray-600"
-        >
+        <button onClick={reset} className="text-sm text-gray-400 hover:text-gray-600">
           Recommencer
         </button>
       </div>
@@ -267,154 +259,116 @@ export default function HomePage() {
 
   // ── Main ──────────────────────────────────────────────────────────────────
 
-  const STEP_LABELS = ["Lieu", "Jour", "Heure"]
-
   return (
-    <div className="h-[calc(100dvh-64px)] bg-gray-50 flex flex-col overflow-hidden">
-
-      {/* Step header */}
-      <div className="shrink-0 flex items-center gap-3 px-3 pt-3 pb-2">
-        <button
-          onClick={goBack}
-          className={`h-8 w-8 flex items-center justify-center rounded-full transition-colors ${
-            step > 0 ? "bg-white shadow-sm text-gray-600 active:bg-gray-100" : "pointer-events-none opacity-0"
-          }`}
-        >
-          <ChevronLeft size={18} />
-        </button>
-
-        {/* Progress bars */}
-        <div className="flex-1 flex gap-1.5">
-          {STEP_LABELS.map((_, i) => (
-            <div
-              key={i}
-              className={`flex-1 h-1.5 rounded-full transition-colors duration-300 ${
-                i < step ? "bg-emerald-400" : i === step ? "bg-emerald-500" : "bg-gray-200"
-              }`}
-            />
-          ))}
-        </div>
-
-        <span className="text-sm font-bold text-gray-900 w-10 text-right">
-          {STEP_LABELS[step]}
-        </span>
-      </div>
+    <div className="h-[calc(100dvh-64px)] bg-gray-50 flex flex-col overflow-hidden px-2 pt-2 pb-2 gap-2">
 
       {/* Hint */}
-      <p className="shrink-0 text-center text-xs text-gray-400 pb-2">
+      <p className="shrink-0 text-center text-xs text-gray-400">
         Maintenir 2s pour sélectionner
       </p>
 
-      {/* Sliding panels — each is 1/3 of 300% = 1 full viewport width */}
-      <div className="flex-1 overflow-hidden">
-        <div
-          className="flex h-full relative"
-          style={{
-            width: "300%",
-            transform: `translateX(-${step * (100 / 3)}%)`,
-            transition: "transform 0.35s cubic-bezier(0.4,0,0.2,1)",
-          }}
-        >
-          {/* Connection line SVG — spans all 3 panels in viewBox 0 0 300 100 */}
-          {connPts.length > 0 && (
-            <svg
-              className="absolute inset-0 pointer-events-none z-10"
-              style={{ width: "100%", height: "100%" }}
-              viewBox="0 0 300 100"
-              preserveAspectRatio="none"
+      {/* 3 columns — all visible simultaneously */}
+      <div className="flex-1 flex gap-2 relative min-h-0">
+
+        {/* Connection line SVG overlay */}
+        {connPts.length > 0 && (
+          <svg
+            className="absolute inset-0 pointer-events-none z-10"
+            style={{ width: "100%", height: "100%" }}
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            {connPts.slice(0, -1).map((pt, i) => {
+              const next = connPts[i + 1]!
+              return (
+                <line
+                  key={i}
+                  x1={pt.x} y1={pt.y}
+                  x2={next.x} y2={next.y}
+                  stroke="#ef4444"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )
+            })}
+            {connPts.map((pt, i) => (
+              <g key={i}>
+                <circle cx={pt.x} cy={pt.y} r="2.2" fill="#ef4444" />
+                <circle cx={pt.x} cy={pt.y} r="1.1" fill="white" />
+              </g>
+            ))}
+          </svg>
+        )}
+
+        {/* Column 1: Location */}
+        <div className="flex-1 flex flex-col gap-2">
+          {BOOK_SPORTS.map((s) => (
+            <Tile
+              key={s.id}
+              id={s.id}
+              heldId={heldId}
+              holdPct={holdPct}
+              selected={selSport === s.id}
+              onHoldStart={startHold}
+              onHoldCancel={cancelHold}
             >
-              {/* Line segments */}
-              {connPts.slice(0, -1).map((pt, i) => {
-                const next = connPts[i + 1]!
+              <span className="font-bold text-xl text-gray-900">{s.label}</span>
+            </Tile>
+          ))}
+        </div>
+
+        {/* Column 2: Days */}
+        <div className="flex-1 flex flex-col gap-2">
+          {days.length === 0
+            ? Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex-1 rounded-2xl bg-white shadow-sm animate-pulse" />
+              ))
+            : days.map((day) => {
+                const { abbr, num } = parseDayLabel(day.label)
+                const id = day.d ?? day.label
                 return (
-                  <line
-                    key={i}
-                    x1={pt.x} y1={pt.y}
-                    x2={next.x} y2={next.y}
-                    stroke="#ef4444"
-                    strokeWidth="0.6"
-                    strokeLinecap="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
+                  <Tile
+                    key={id}
+                    id={id}
+                    heldId={heldId}
+                    holdPct={holdPct}
+                    selected={selDay === id}
+                    onHoldStart={startHold}
+                    onHoldCancel={cancelHold}
+                  >
+                    <span className="font-bold text-sm text-gray-900">{DAY_SHORT[abbr] ?? abbr}</span>
+                    <span className="text-xs text-gray-400">{num}</span>
+                  </Tile>
                 )
               })}
-              {/* Dots — outer filled red, inner white */}
-              {connPts.map((pt, i) => (
-                <g key={i}>
-                  <circle cx={pt.x} cy={pt.y} r="1.8" fill="#ef4444" />
-                  <circle cx={pt.x} cy={pt.y} r="0.9" fill="white" />
-                </g>
-              ))}
-            </svg>
-          )}
-          {/* Panel 0: Location */}
-          <div className="flex flex-col gap-2 px-3 pb-3 h-full" style={{ width: "33.333%" }}>
-            {BOOK_SPORTS.map((s) => (
+        </div>
+
+        {/* Column 3: Times */}
+        <div className="flex-1 flex flex-col gap-2">
+          {FIXED_TIMES.map((time) => {
+            const available = !loading && timeAvailability[time]
+            return (
               <Tile
-                key={s.id}
-                id={s.id}
+                key={time}
+                id={time}
                 heldId={heldId}
                 holdPct={holdPct}
-                selected={selSport === s.id}
+                selected={selTime === time}
+                disabled={loading || !available}
                 onHoldStart={startHold}
                 onHoldCancel={cancelHold}
               >
-                <span className="font-bold text-2xl text-gray-900">{s.label}</span>
+                <span className={`font-bold text-lg ${
+                  loading ? "text-gray-200" : available ? "text-gray-900" : "text-gray-300"
+                }`}>
+                  {loading ? "…" : formatTime(time)}
+                </span>
               </Tile>
-            ))}
-          </div>
-
-          {/* Panel 1: Days */}
-          <div className="flex flex-col gap-2 px-3 pb-3 h-full" style={{ width: "33.333%" }}>
-            {days.length === 0
-              ? Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex-1 rounded-2xl bg-white shadow-sm animate-pulse" />
-                ))
-              : days.map((day) => {
-                  const { abbr, num } = parseDayLabel(day.label)
-                  const id = day.d ?? day.label
-                  return (
-                    <Tile
-                      key={id}
-                      id={id}
-                      heldId={heldId}
-                      holdPct={holdPct}
-                      selected={selDay === id}
-                      onHoldStart={startHold}
-                      onHoldCancel={cancelHold}
-                    >
-                      <span className="font-bold text-base text-gray-900">{DAY_SHORT[abbr] ?? abbr}</span>
-                      <span className="text-xs text-gray-400">{num}</span>
-                    </Tile>
-                  )
-                })}
-          </div>
-
-          {/* Panel 2: Times */}
-          <div className="flex flex-col gap-2 px-3 pb-3 h-full" style={{ width: "33.333%" }}>
-            {FIXED_TIMES.map((time) => {
-              const available = !loading && timeAvailability[time]
-              return (
-                <Tile
-                  key={time}
-                  id={time}
-                  heldId={heldId}
-                  holdPct={holdPct}
-                  selected={selTime === time}
-                  disabled={loading || !available}
-                  onHoldStart={startHold}
-                  onHoldCancel={cancelHold}
-                >
-                  <span className={`font-bold text-xl ${
-                    loading ? "text-gray-200" : available ? "text-gray-900" : "text-gray-300"
-                  }`}>
-                    {loading ? "…" : formatTime(time)}
-                  </span>
-                </Tile>
-              )
-            })}
-          </div>
+            )
+          })}
         </div>
+
       </div>
     </div>
   )
