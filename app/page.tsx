@@ -98,7 +98,8 @@ export default function HomePage() {
   // Pointer / rubber-band tracking
   const containerRef   = useRef<HTMLDivElement>(null)
   const [livePos, setLivePos] = useState<Pt | null>(null)
-  const lastTileIdRef  = useRef<string | null>(null)   // tile currently under pointer
+  const lastTileIdRef     = useRef<string | null>(null)  // tile currently under pointer
+  const pointerDownTileRef = useRef<string | null>(null)  // tile where pointerdown fired
   const doneTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Config ────────────────────────────────────────────────────────────────
@@ -145,7 +146,8 @@ export default function HomePage() {
     setHeldId(null)
     setHoldPct(0)
     holdRef.current = null
-    lastTileIdRef.current = null  // allow re-entry on same tile after confirm
+    lastTileIdRef.current = null    // allow re-entry on same tile after confirm
+    pointerDownTileRef.current = null  // prevent double-confirm on subsequent pointerup
 
     const isSport = BOOK_SPORTS.some((s) => s.id === id)
     const isTime  = FIXED_TIMES.includes(id)
@@ -198,6 +200,7 @@ export default function HomePage() {
     cancelHold()
     if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
     lastTileIdRef.current = null
+    pointerDownTileRef.current = null
     setSelSport(null)
     setSelDay(null)
     setSelTime(null)
@@ -226,19 +229,41 @@ export default function HomePage() {
     const tileId    = tile?.dataset.tileId    ?? null
     const disabled  = tile?.hasAttribute("data-disabled") ?? false
 
+    // Track which tile the press started on (for hold-and-release validation)
+    if (e.type === "pointerdown") {
+      pointerDownTileRef.current = tileId
+    }
+
     if (tileId === lastTileIdRef.current) return  // still on same tile, nothing to do
 
-    // Entered a different tile (or left all tiles)
+    // Entered a different tile (or left all tiles) — cross-tile move voids press-tracking
+    if (e.type === "pointermove") pointerDownTileRef.current = null
     cancelHold()
     lastTileIdRef.current = tileId
     if (tileId && !disabled) startHold(tileId)
   }, [cancelHold, startHold])
 
-  const handlePointerEnd = useCallback(() => {
+  const handlePointerEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.type === "pointerup" && pointerDownTileRef.current) {
+      // Check if the pointer is still over the tile it pressed on
+      const el   = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
+      const tile = el?.closest<HTMLElement>("[data-tile-id]")
+      const tileId   = tile?.dataset.tileId ?? null
+      const disabled = tile?.hasAttribute("data-disabled") ?? false
+
+      if (tileId && tileId === pointerDownTileRef.current && !disabled) {
+        // "Hold and release" on same tile → confirm immediately
+        confirmHold(tileId)
+        lastTileIdRef.current = null
+        setLivePos(null)
+        return
+      }
+    }
     cancelHold()
     lastTileIdRef.current = null
+    pointerDownTileRef.current = null
     setLivePos(null)
-  }, [cancelHold])
+  }, [cancelHold, confirmHold])
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
