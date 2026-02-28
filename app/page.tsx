@@ -117,38 +117,6 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50">
 
-      {/* ── Name setup form ───────────────────────────────────────────── */}
-      {showNameForm && (
-        <div className="mx-3 mt-4 rounded-2xl border bg-white p-4 space-y-3 shadow-sm">
-          <p className="text-sm text-gray-700">
-            Votre nom FairPlay{" "}
-            <span className="text-gray-400">(ex : C Berchier)</span>
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && saveDisplayName()}
-              placeholder="C Berchier"
-              className="flex-1 rounded-xl border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
-              autoFocus
-            />
-            <button
-              onClick={saveDisplayName}
-              disabled={!nameInput.trim()}
-              className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-            >
-              OK
-            </button>
-          </div>
-          {displayName && (
-            <button onClick={() => setShowNameForm(false)} className="text-xs text-gray-400">
-              Annuler
-            </button>
-          )}
-        </div>
-      )}
 
       {/* ── 3-column filter grid ──────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-2 px-3 pt-4 pb-36">
@@ -226,7 +194,6 @@ export default function HomePage() {
       {/* ── Bottom filter action bar ──────────────────────────────────── */}
       <div className="fixed bottom-16 inset-x-0 px-3 pb-2 flex gap-2">
         <button
-          onClick={() => setShowNameForm(!showNameForm)}
           className="flex-1 flex flex-col items-center gap-1 py-4 rounded-2xl shadow-lg text-white font-semibold text-sm"
           style={{ background: "linear-gradient(160deg, #34d399, #059669)" }}
         >
@@ -250,17 +217,6 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* ── User identity ─────────────────────────────────────────────── */}
-      {displayName && !showNameForm && (
-        <div className="fixed top-3 right-3 z-10">
-          <button
-            onClick={() => setShowNameForm(true)}
-            className="text-[10px] text-gray-300 hover:text-gray-500 transition-colors"
-          >
-            {displayName}
-          </button>
-        </div>
-      )}
     </div>
   )
 }
