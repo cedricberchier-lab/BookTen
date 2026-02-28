@@ -1,10 +1,12 @@
 "use client"
 
+import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { CalendarCheck, Compass, BookMarked } from "lucide-react"
+import type { Route } from "next"
 
-const TABS = [
+const TABS: { href: Route<string>; label: string; Icon: React.ElementType }[] = [
   { href: "/",         label: "Book",    Icon: CalendarCheck },
   { href: "/explore",  label: "Explore", Icon: Compass       },
   { href: "/bookings", label: "MyRes",   Icon: BookMarked    },
@@ -21,7 +23,7 @@ export default function BottomNav() {
           <Link
             key={href}
             href={href}
-            className={`flex flex-1 flex-col items-center justify-center gap-1 py-3 transition-colors ${
+            className={`relative flex flex-1 flex-col items-center justify-center gap-1 py-3 transition-colors ${
               active ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
             }`}
           >
@@ -30,7 +32,7 @@ export default function BottomNav() {
               {label}
             </span>
             {active && (
-              <span className="absolute bottom-0 w-8 h-0.5 rounded-full bg-gray-900" />
+              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-gray-900" />
             )}
           </Link>
         )
