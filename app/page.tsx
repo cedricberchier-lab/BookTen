@@ -18,10 +18,9 @@ const DAY_SHORT: Record<string, string> = {
   Lu: "Lun", Ma: "Mar", Me: "Mer", Je: "Jeu", Ve: "Ven", Sa: "Sam", Di: "Dim",
 }
 
-const HOLD_MS = 1000
+const HOLD_MS = 500  // flyover dwell time
 
-// Approximate tile-centre Y positions within a 0–100 viewBox column
-// (2 sport tiles, 5 day tiles, 6 time tiles, all flex-1 with gap-2)
+// Approximate tile-centre Y positions in a 0–100 viewBox column
 const SPORT_Y = [26, 74]
 const DAY_Y   = [10, 28, 50, 72, 90]
 const TIME_Y  = [8, 24, 40, 56, 72, 88]
@@ -39,6 +38,7 @@ function formatTime(t: string): string {
 }
 
 // ── Tile ──────────────────────────────────────────────────────────────────────
+// Tiles are purely visual — all pointer logic lives on the container.
 
 interface TileProps {
   id: string
@@ -46,30 +46,21 @@ interface TileProps {
   holdPct: number
   selected?: boolean
   disabled?: boolean
-  onHoldStart: (id: string) => void
-  onHoldCancel: () => void
   children: ReactNode
 }
 
-function Tile({ id, heldId, holdPct, selected, disabled, onHoldStart, onHoldCancel, children }: TileProps) {
+function Tile({ id, heldId, holdPct, selected, disabled, children }: TileProps) {
   const isHeld = heldId === id
   return (
     <div
+      data-tile-id={id}
+      {...(disabled ? { "data-disabled": "" } : {})}
       className={`flex-1 relative rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm select-none overflow-hidden transition-colors ${
         selected ? "bg-emerald-500 text-white" :
         disabled ? "bg-gray-100"               :
         isHeld   ? "bg-emerald-50"             :
                    "bg-white"
       }`}
-      onPointerDown={(e) => {
-        if (disabled) return
-        ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-        onHoldStart(id)
-      }}
-      onPointerUp={onHoldCancel}
-      onPointerLeave={onHoldCancel}
-      onPointerCancel={onHoldCancel}
-      style={{ touchAction: "none" }}
     >
       {children}
       {isHeld && (
@@ -93,7 +84,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [displayName, setDisplayName] = useState("")
 
-  // Hold interaction
+  // Hold animation state
   const [heldId, setHeldId]   = useState<string | null>(null)
   const [holdPct, setHoldPct] = useState(0)
   const holdRef = useRef<{ raf: number } | null>(null)
@@ -104,12 +95,11 @@ export default function HomePage() {
   const [selTime,  setSelTime]  = useState<string | null>(null)
   const [done,     setDone]     = useState(false)
 
-  // Live finger tracking for the rubber-band line
-  const containerRef  = useRef<HTMLDivElement>(null)
+  // Pointer / rubber-band tracking
+  const containerRef   = useRef<HTMLDivElement>(null)
   const [livePos, setLivePos] = useState<Pt | null>(null)
-
-  // Timer for delayed done screen (lets user see the completed path first)
-  const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastTileIdRef  = useRef<string | null>(null)   // tile currently under pointer
+  const doneTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Config ────────────────────────────────────────────────────────────────
 
@@ -138,7 +128,7 @@ export default function HomePage() {
     void load(sport, activeD, displayName || undefined)
   }, [load, sport, activeD, displayName])
 
-  // ── Done detection (delayed so user sees the completed line) ──────────────
+  // ── Done detection (delayed so user sees the completed path) ──────────────
 
   useEffect(() => {
     if (selSport && selDay && selTime) {
@@ -155,6 +145,7 @@ export default function HomePage() {
     setHeldId(null)
     setHoldPct(0)
     holdRef.current = null
+    lastTileIdRef.current = null  // allow re-entry on same tile after confirm
 
     const isSport = BOOK_SPORTS.some((s) => s.id === id)
     const isTime  = FIXED_TIMES.includes(id)
@@ -206,6 +197,7 @@ export default function HomePage() {
   const reset = useCallback(() => {
     cancelHold()
     if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
+    lastTileIdRef.current = null
     setSelSport(null)
     setSelDay(null)
     setSelTime(null)
@@ -213,19 +205,40 @@ export default function HomePage() {
     setLivePos(null)
   }, [cancelHold])
 
-  // ── Pointer tracking for rubber-band line ─────────────────────────────────
+  // ── Pointer tracking — flyover on container ───────────────────────────────
+  // Works for both mouse (no press needed) and touch drag.
+  // elementFromPoint detects the tile under the pointer on every move.
 
-  const trackPointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const el = containerRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
+  const handlePointerActivity = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const container = containerRef.current
+    if (!container) return
+
+    // Always update rubber-band line position
+    const rect = container.getBoundingClientRect()
     setLivePos({
-      x: ((e.clientX - rect.left) / rect.width)  * 100,
-      y: ((e.clientY - rect.top)  / rect.height) * 100,
+      x: Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width)  * 100)),
+      y: Math.max(0, Math.min(100, ((e.clientY - rect.top)  / rect.height) * 100)),
     })
-  }, [])
 
-  const clearLivePos = useCallback(() => setLivePos(null), [])
+    // Which tile is the pointer over right now?
+    const el    = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
+    const tile  = el?.closest<HTMLElement>("[data-tile-id]")
+    const tileId    = tile?.dataset.tileId    ?? null
+    const disabled  = tile?.hasAttribute("data-disabled") ?? false
+
+    if (tileId === lastTileIdRef.current) return  // still on same tile, nothing to do
+
+    // Entered a different tile (or left all tiles)
+    cancelHold()
+    lastTileIdRef.current = tileId
+    if (tileId && !disabled) startHold(tileId)
+  }, [cancelHold, startHold])
+
+  const handlePointerEnd = useCallback(() => {
+    cancelHold()
+    lastTileIdRef.current = null
+    setLivePos(null)
+  }, [cancelHold])
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -242,7 +255,7 @@ export default function HomePage() {
     data?.slots.find((s) => s.startTime === time && s.status === "free")
 
   // ── Connection points (viewBox 0 0 100 100) ───────────────────────────────
-  // Column centres: x ≈ 16.7 (sport), 50 (day), 83.3 (time)
+  // Column centres: x ≈ 16.7, 50, 83.3
 
   const selSportIdx = selSport ? BOOK_SPORTS.findIndex((s) => s.id === selSport) : -1
   const selDayIdx   = selDay   ? days.findIndex((d) => (d.d ?? d.label) === selDay) : -1
@@ -253,10 +266,7 @@ export default function HomePage() {
   const timePt:  Pt | null = selTimeIdx  >= 0 ? { x: (100 * 5) / 6, y: TIME_Y[selTimeIdx]   ?? 50 } : null
   const connPts = [sportPt, dayPt, timePt].filter((p): p is Pt => p !== null)
 
-  // The last confirmed point — rubber-band line starts here
-  const lastPt = connPts[connPts.length - 1] ?? null
-
-  // Show rubber-band only while path is incomplete
+  const lastPt   = connPts[connPts.length - 1] ?? null
   const showLive = connPts.length > 0 && connPts.length < 3 && livePos !== null
 
   // ── Done screen ───────────────────────────────────────────────────────────
@@ -300,19 +310,22 @@ export default function HomePage() {
 
       {/* Hint */}
       <p className="shrink-0 text-center text-xs text-gray-400">
-        Maintenir 1s pour sélectionner
+        Survoler une tuile 0,5s pour sélectionner
       </p>
 
-      {/* 3 columns — all visible simultaneously */}
+      {/* 3 columns — all visible, pointer events handled at container level */}
       <div
         ref={containerRef}
         className="flex-1 flex gap-2 relative min-h-0"
-        onPointerMove={connPts.length > 0 && connPts.length < 3 ? trackPointer : undefined}
-        onPointerLeave={clearLivePos}
-        onPointerUp={clearLivePos}
+        style={{ touchAction: "none" }}
+        onPointerDown={handlePointerActivity}
+        onPointerMove={handlePointerActivity}
+        onPointerLeave={handlePointerEnd}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
       >
 
-        {/* SVG overlay — static confirmed path + live rubber-band */}
+        {/* SVG overlay — confirmed path + live rubber-band */}
         {(connPts.length > 0 || showLive) && (
           <svg
             className="absolute inset-0 pointer-events-none z-10"
@@ -369,8 +382,6 @@ export default function HomePage() {
               heldId={heldId}
               holdPct={holdPct}
               selected={selSport === s.id}
-              onHoldStart={startHold}
-              onHoldCancel={cancelHold}
             >
               <span className="font-bold text-xl text-gray-900">{s.label}</span>
             </Tile>
@@ -393,8 +404,6 @@ export default function HomePage() {
                     heldId={heldId}
                     holdPct={holdPct}
                     selected={selDay === id}
-                    onHoldStart={startHold}
-                    onHoldCancel={cancelHold}
                   >
                     <span className="font-bold text-sm text-gray-900">{DAY_SHORT[abbr] ?? abbr}</span>
                     <span className="text-xs text-gray-400">{num}</span>
@@ -415,8 +424,6 @@ export default function HomePage() {
                 holdPct={holdPct}
                 selected={selTime === time}
                 disabled={loading || !available}
-                onHoldStart={startHold}
-                onHoldCancel={cancelHold}
               >
                 <span className={`font-bold text-lg ${
                   loading ? "text-gray-200" : available ? "text-gray-900" : "text-gray-300"
