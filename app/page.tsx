@@ -3,18 +3,18 @@
 import { useEffect, useState, useCallback } from "react"
 import { MapPin, CalendarDays, Clock } from "lucide-react"
 import type { AvailabilityResponse, Slot, Sport } from "@/types"
-import { SPORTS } from "@/types"
 import { getUserConfig, setUserConfig } from "@/lib/user-config"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const SPORT_LABEL: Record<Sport, string> = {
-  tennis_int: "Indoor",
-  tennis_ext: "Outdoor",
-  squash:     "Squash",
-  badminton:  "Badminton",
-  padel:      "Padel",
-}
+// Only two location categories shown on Book page
+const BOOK_SPORTS: { id: Sport; label: string }[] = [
+  { id: "tennis_int", label: "Indoor" },
+  { id: "tennis_ext", label: "Outdoor" },
+]
+
+// Fixed time slots to display
+const FIXED_TIMES = ["08:30", "11:30", "12:30", "17:30", "18:30", "19:30"]
 
 const DAY_SHORT: Record<string, string> = {
   Lu: "Lun", Ma: "Mar", Me: "Mer", Je: "Jeu", Ve: "Ven", Sa: "Sam", Di: "Dim",
@@ -97,13 +97,20 @@ export default function HomePage() {
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
-  const freeTimes = data?.slots
-    .filter((s) => s.status === "free")
-    .map((s) => s.startTime)
-    .filter((t, i, arr) => arr.indexOf(t) === i) // dedupe
-    .sort() ?? []
+  // Only the next 5 days
+  const days = (data?.days ?? []).slice(0, 5)
 
-  const days = data?.days ?? []
+  // For each fixed time: is at least one court free?
+  const timeAvailability: Record<string, boolean> = {}
+  for (const t of FIXED_TIMES) {
+    timeAvailability[t] = (data?.slots ?? []).some(
+      (s) => s.startTime === t && s.status === "free"
+    )
+  }
+
+  // First free slot per time (for booking URL)
+  const firstFreeSlot = (time: string): Slot | undefined =>
+    data?.slots.find((s) => s.startTime === time && s.status === "free")
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -146,9 +153,9 @@ export default function HomePage() {
       {/* ── 3-column filter grid ──────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-2 px-3 pt-4 pb-36">
 
-        {/* ── Col 1: Location / Sport ───────────────────────────────── */}
+        {/* ── Col 1: Location (Indoor / Outdoor only) ───────────────── */}
         <div className="flex flex-col gap-2">
-          {SPORTS.map((s) => (
+          {BOOK_SPORTS.map((s) => (
             <button
               key={s.id}
               onClick={() => handleSportChange(s.id)}
@@ -159,13 +166,13 @@ export default function HomePage() {
               }`}
             >
               <span className="font-bold text-base text-center leading-tight">
-                {SPORT_LABEL[s.id]}
+                {s.label}
               </span>
             </button>
           ))}
         </div>
 
-        {/* ── Col 2: Day ────────────────────────────────────────────── */}
+        {/* ── Col 2: Next 5 days ────────────────────────────────────── */}
         <div className="flex flex-col gap-2">
           {days.map((day) => {
             const { abbr, num } = parseDayLabel(day.label)
@@ -187,27 +194,27 @@ export default function HomePage() {
           })}
         </div>
 
-        {/* ── Col 3: Available times ────────────────────────────────── */}
+        {/* ── Col 3: Fixed time slots — active if ≥1 court free ────── */}
         <div className="flex flex-col gap-2">
-          {loading && (
-            <div className="rounded-2xl bg-white shadow-sm flex items-center justify-center py-8 animate-pulse">
-              <span className="text-gray-300 text-sm">…</span>
-            </div>
-          )}
-          {!loading && freeTimes.length === 0 && (
-            <div className="rounded-2xl bg-white shadow-sm flex items-center justify-center py-8">
-              <span className="text-gray-300 text-sm">–</span>
-            </div>
-          )}
-          {!loading && freeTimes.map((time) => {
-            const slot = data?.slots.find((s) => s.startTime === time && s.status === "free")
+          {FIXED_TIMES.map((time) => {
+            const available = !loading && timeAvailability[time]
+            const slot = firstFreeSlot(time)
             return (
               <button
                 key={time}
-                onClick={() => slot && handleSlotClick(slot)}
-                className="rounded-2xl bg-white shadow-sm flex items-center justify-center py-5 hover:bg-gray-50 active:bg-emerald-50 transition-colors"
+                onClick={() => available && slot && handleSlotClick(slot)}
+                disabled={loading || !available}
+                className={`rounded-2xl flex items-center justify-center py-5 shadow-sm transition-colors ${
+                  loading
+                    ? "bg-white animate-pulse"
+                    : available
+                      ? "bg-white hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer"
+                      : "bg-gray-100 cursor-default"
+                }`}
               >
-                <span className="font-bold text-xl text-gray-900">
+                <span className={`font-bold text-xl ${
+                  loading ? "text-gray-200" : available ? "text-gray-900" : "text-gray-300"
+                }`}>
                   {formatTime(time)}
                 </span>
               </button>
