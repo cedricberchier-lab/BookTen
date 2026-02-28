@@ -18,7 +18,13 @@ const DAY_SHORT: Record<string, string> = {
   Lu: "Lun", Ma: "Mar", Me: "Mer", Je: "Jeu", Ve: "Ven", Sa: "Sam", Di: "Dim",
 }
 
-const HOLD_MS = 2000
+const HOLD_MS = 1000
+
+// Approximate tile-centre Y positions within a 0–100 viewBox column
+// (2 sport tiles, 5 day tiles, 6 time tiles, all flex-1 with gap-2)
+const SPORT_Y = [26, 74]
+const DAY_Y   = [10, 28, 50, 72, 90]
+const TIME_Y  = [8, 24, 40, 56, 72, 88]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -78,6 +84,8 @@ function Tile({ id, heldId, holdPct, selected, disabled, onHoldStart, onHoldCanc
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+type Pt = { x: number; y: number }
+
 export default function HomePage() {
   const [sport, setSport]     = useState<Sport>("tennis_int")
   const [activeD, setActiveD] = useState<string | undefined>(undefined)
@@ -95,6 +103,13 @@ export default function HomePage() {
   const [selDay,   setSelDay]   = useState<string | null>(null)
   const [selTime,  setSelTime]  = useState<string | null>(null)
   const [done,     setDone]     = useState(false)
+
+  // Live finger tracking for the rubber-band line
+  const containerRef  = useRef<HTMLDivElement>(null)
+  const [livePos, setLivePos] = useState<Pt | null>(null)
+
+  // Timer for delayed done screen (lets user see the completed path first)
+  const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Config ────────────────────────────────────────────────────────────────
 
@@ -123,10 +138,15 @@ export default function HomePage() {
     void load(sport, activeD, displayName || undefined)
   }, [load, sport, activeD, displayName])
 
-  // ── Done detection ────────────────────────────────────────────────────────
+  // ── Done detection (delayed so user sees the completed line) ──────────────
 
   useEffect(() => {
-    if (selSport && selDay && selTime) setDone(true)
+    if (selSport && selDay && selTime) {
+      doneTimerRef.current = setTimeout(() => setDone(true), 600)
+      return () => {
+        if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
+      }
+    }
   }, [selSport, selDay, selTime])
 
   // ── Hold logic ────────────────────────────────────────────────────────────
@@ -146,14 +166,15 @@ export default function HomePage() {
       setSelDay(null)
       setSelTime(null)
       setDone(false)
+      if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
     } else if (isTime) {
       setSelTime(id)
     } else {
-      // Day tile
       setSelDay(id)
       setActiveD(id || undefined)
       setSelTime(null)
       setDone(false)
+      if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
     }
   }, [])
 
@@ -184,11 +205,27 @@ export default function HomePage() {
 
   const reset = useCallback(() => {
     cancelHold()
+    if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
     setSelSport(null)
     setSelDay(null)
     setSelTime(null)
     setDone(false)
+    setLivePos(null)
   }, [cancelHold])
+
+  // ── Pointer tracking for rubber-band line ─────────────────────────────────
+
+  const trackPointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = containerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    setLivePos({
+      x: ((e.clientX - rect.left) / rect.width)  * 100,
+      y: ((e.clientY - rect.top)  / rect.height) * 100,
+    })
+  }, [])
+
+  const clearLivePos = useCallback(() => setLivePos(null), [])
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -204,24 +241,23 @@ export default function HomePage() {
   const firstFreeSlot = (time: string): Slot | undefined =>
     data?.slots.find((s) => s.startTime === time && s.status === "free")
 
-  // ── Connection line ───────────────────────────────────────────────────────
-  // viewBox "0 0 100 100" — 3 equal columns with gap-2
-  // Column centres: x ≈ 16.7, 50, 83.3
-  // Y values are approximate tile centres as % of column height
+  // ── Connection points (viewBox 0 0 100 100) ───────────────────────────────
+  // Column centres: x ≈ 16.7 (sport), 50 (day), 83.3 (time)
 
   const selSportIdx = selSport ? BOOK_SPORTS.findIndex((s) => s.id === selSport) : -1
   const selDayIdx   = selDay   ? days.findIndex((d) => (d.d ?? d.label) === selDay) : -1
   const selTimeIdx  = selTime  ? FIXED_TIMES.findIndex((t) => t === selTime) : -1
 
-  const SPORT_Y = [26, 74]
-  const DAY_Y   = [10, 28, 50, 72, 90]
-  const TIME_Y  = [8, 24, 40, 56, 72, 88]
-
-  type Pt = { x: number; y: number }
   const sportPt: Pt | null = selSportIdx >= 0 ? { x: 100 / 6,       y: SPORT_Y[selSportIdx] ?? 50 } : null
   const dayPt:   Pt | null = selDayIdx   >= 0 ? { x: 50,            y: DAY_Y[selDayIdx]     ?? 50 } : null
   const timePt:  Pt | null = selTimeIdx  >= 0 ? { x: (100 * 5) / 6, y: TIME_Y[selTimeIdx]   ?? 50 } : null
   const connPts = [sportPt, dayPt, timePt].filter((p): p is Pt => p !== null)
+
+  // The last confirmed point — rubber-band line starts here
+  const lastPt = connPts[connPts.length - 1] ?? null
+
+  // Show rubber-band only while path is incomplete
+  const showLive = connPts.length > 0 && connPts.length < 3 && livePos !== null
 
   // ── Done screen ───────────────────────────────────────────────────────────
 
@@ -264,20 +300,27 @@ export default function HomePage() {
 
       {/* Hint */}
       <p className="shrink-0 text-center text-xs text-gray-400">
-        Maintenir 2s pour sélectionner
+        Maintenir 1s pour sélectionner
       </p>
 
       {/* 3 columns — all visible simultaneously */}
-      <div className="flex-1 flex gap-2 relative min-h-0">
+      <div
+        ref={containerRef}
+        className="flex-1 flex gap-2 relative min-h-0"
+        onPointerMove={connPts.length > 0 && connPts.length < 3 ? trackPointer : undefined}
+        onPointerLeave={clearLivePos}
+        onPointerUp={clearLivePos}
+      >
 
-        {/* Connection line SVG overlay */}
-        {connPts.length > 0 && (
+        {/* SVG overlay — static confirmed path + live rubber-band */}
+        {(connPts.length > 0 || showLive) && (
           <svg
             className="absolute inset-0 pointer-events-none z-10"
             style={{ width: "100%", height: "100%" }}
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
           >
+            {/* Confirmed segment lines */}
             {connPts.slice(0, -1).map((pt, i) => {
               const next = connPts[i + 1]!
               return (
@@ -292,6 +335,22 @@ export default function HomePage() {
                 />
               )
             })}
+
+            {/* Rubber-band: dashed line from last confirmed point to finger */}
+            {showLive && lastPt && (
+              <line
+                x1={lastPt.x} y1={lastPt.y}
+                x2={livePos!.x} y2={livePos!.y}
+                stroke="#ef4444"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeDasharray="3 3"
+                vectorEffect="non-scaling-stroke"
+                opacity="0.5"
+              />
+            )}
+
+            {/* Confirmed dots */}
             {connPts.map((pt, i) => (
               <g key={i}>
                 <circle cx={pt.x} cy={pt.y} r="2.2" fill="#ef4444" />
