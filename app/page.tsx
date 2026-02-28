@@ -114,20 +114,20 @@ export default function HomePage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // 64px = bottom nav (pb-16), layout fills the rest of the viewport
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-[calc(100dvh-64px)] bg-gray-50 flex flex-col gap-2 px-3 pt-3 pb-3 overflow-hidden">
 
+      {/* ── 3-column filter grid — flex-1 fills all space above action bar ── */}
+      <div className="flex-1 grid grid-cols-3 gap-2 min-h-0">
 
-      {/* ── 3-column filter grid ──────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-2 px-3 pt-4 pb-36">
-
-        {/* ── Col 1: Location (Indoor / Outdoor only) ───────────────── */}
+        {/* Col 1: Location */}
         <div className="flex flex-col gap-2">
           {BOOK_SPORTS.map((s) => (
             <button
               key={s.id}
               onClick={() => handleSportChange(s.id)}
-              className={`rounded-2xl flex items-center justify-center p-4 min-h-[80px] shadow-sm transition-colors ${
+              className={`flex-1 rounded-2xl flex items-center justify-center shadow-sm transition-colors ${
                 sport === s.id
                   ? "bg-emerald-500 text-white"
                   : "bg-white text-gray-900 hover:bg-gray-50"
@@ -140,7 +140,7 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* ── Col 2: Next 5 days ────────────────────────────────────── */}
+        {/* Col 2: Next 5 days */}
         <div className="flex flex-col gap-2">
           {days.map((day) => {
             const { abbr, num } = parseDayLabel(day.label)
@@ -149,7 +149,7 @@ export default function HomePage() {
               <button
                 key={day.label}
                 onClick={() => setActiveD(day.d)}
-                className={`rounded-2xl flex flex-col items-center justify-center py-5 gap-0.5 shadow-sm transition-colors ${
+                className={`flex-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 shadow-sm transition-colors ${
                   day.active
                     ? "bg-emerald-500 text-white"
                     : "bg-white text-gray-700 hover:bg-gray-50"
@@ -162,7 +162,7 @@ export default function HomePage() {
           })}
         </div>
 
-        {/* ── Col 3: Fixed time slots — active if ≥1 court free ────── */}
+        {/* Col 3: Fixed times — active if ≥1 court free */}
         <div className="flex flex-col gap-2">
           {FIXED_TIMES.map((time) => {
             const available = !loading && timeAvailability[time]
@@ -172,7 +172,7 @@ export default function HomePage() {
                 key={time}
                 onClick={() => available && slot && handleSlotClick(slot)}
                 disabled={loading || !available}
-                className={`rounded-2xl flex items-center justify-center py-5 shadow-sm transition-colors ${
+                className={`flex-1 rounded-2xl flex items-center justify-center shadow-sm transition-colors ${
                   loading
                     ? "bg-white animate-pulse"
                     : available
@@ -191,10 +191,10 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ── Bottom filter action bar ──────────────────────────────────── */}
-      <div className="fixed bottom-16 inset-x-0 px-3 pb-2 flex gap-2">
+      {/* ── Action bar — sits flush below grid, no gap ─────────────────── */}
+      <div className="flex gap-2 shrink-0">
         <button
-          className="flex-1 flex flex-col items-center gap-1 py-4 rounded-2xl shadow-lg text-white font-semibold text-sm"
+          className="flex-1 flex flex-col items-center gap-1 py-4 rounded-2xl text-white font-semibold text-sm"
           style={{ background: "linear-gradient(160deg, #34d399, #059669)" }}
         >
           <MapPin size={18} />
@@ -202,14 +202,14 @@ export default function HomePage() {
         </button>
         <button
           onClick={() => setActiveD(undefined)}
-          className="flex-1 flex flex-col items-center gap-1 py-4 rounded-2xl shadow-lg text-white font-semibold text-sm"
+          className="flex-1 flex flex-col items-center gap-1 py-4 rounded-2xl text-white font-semibold text-sm"
           style={{ background: "linear-gradient(160deg, #34d399, #059669)" }}
         >
           <CalendarDays size={18} />
           <span>Day</span>
         </button>
         <button
-          className="flex-1 flex flex-col items-center gap-1 py-4 rounded-2xl shadow-lg text-white font-semibold text-sm"
+          className="flex-1 flex flex-col items-center gap-1 py-4 rounded-2xl text-white font-semibold text-sm"
           style={{ background: "linear-gradient(160deg, #34d399, #059669)" }}
         >
           <Clock size={18} />
