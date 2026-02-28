@@ -18,7 +18,7 @@ const DAY_SHORT: Record<string, string> = {
   Lu: "Lun", Ma: "Mar", Me: "Mer", Je: "Jeu", Ve: "Ven", Sa: "Sam", Di: "Dim",
 }
 
-const HOLD_MS = 500  // flyover dwell time
+const HOLD_MS = 100  // flyover dwell time (0.1 s)
 
 // Approximate tile-centre Y positions in a 0–100 viewBox column
 const SPORT_Y = [26, 74]
@@ -35,6 +35,20 @@ function parseDayLabel(label: string): { abbr: string; num: number } {
 function formatTime(t: string): string {
   const [hh, mm] = t.split(":")
   return `${parseInt(hh ?? "0", 10)}.${mm ?? "00"}`
+}
+
+// Find the tile element under a pointer position, skipping SVG overlay elements.
+// document.elementFromPoint returns SVG nodes (even with pointer-events:none)
+// which sit on top of tiles; elementsFromPoint gives the full stack so we can
+// walk past the SVG and find the [data-tile-id] div behind it.
+function tileAtPoint(x: number, y: number): { tileId: string | null; disabled: boolean } {
+  const stack = document.elementsFromPoint(x, y)
+  for (const el of stack) {
+    if (el instanceof SVGElement) continue
+    const t = (el as HTMLElement).closest<HTMLElement>("[data-tile-id]")
+    if (t) return { tileId: t.dataset.tileId ?? null, disabled: t.hasAttribute("data-disabled") }
+  }
+  return { tileId: null, disabled: false }
 }
 
 // ── Tile ──────────────────────────────────────────────────────────────────────
@@ -231,11 +245,8 @@ export default function HomePage() {
       y: Math.max(0, Math.min(100, ((e.clientY - rect.top)  / rect.height) * 100)),
     })
 
-    // Which tile is the pointer over right now?
-    const el    = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
-    const tile  = el?.closest<HTMLElement>("[data-tile-id]")
-    const tileId    = tile?.dataset.tileId    ?? null
-    const disabled  = tile?.hasAttribute("data-disabled") ?? false
+    // Which tile is the pointer over right now? (skips SVG overlay elements)
+    const { tileId, disabled } = tileAtPoint(e.clientX, e.clientY)
 
     // Track which tile the press started on (for hold-and-release validation)
     if (e.type === "pointerdown") {
@@ -259,11 +270,8 @@ export default function HomePage() {
 
   const handlePointerEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.type === "pointerup" && pointerDownTileRef.current) {
-      // Check if the pointer is still over the tile it pressed on
-      const el   = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
-      const tile = el?.closest<HTMLElement>("[data-tile-id]")
-      const tileId   = tile?.dataset.tileId ?? null
-      const disabled = tile?.hasAttribute("data-disabled") ?? false
+      // Check if the pointer is still over the tile it pressed on (skips SVG overlay)
+      const { tileId, disabled } = tileAtPoint(e.clientX, e.clientY)
 
       if (tileId && tileId === pointerDownTileRef.current && !disabled) {
         // "Hold and release" on same tile → confirm immediately
