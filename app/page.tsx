@@ -247,7 +247,9 @@ export default function HomePage() {
     // Entered a different tile (or left all tiles) — cross-tile move voids press-tracking
     if (e.type === "pointermove") pointerDownTileRef.current = null
     cancelHold()
-    lastTileIdRef.current = tileId
+    // Don't cache disabled tiles: if they become enabled later (e.g. after loading)
+    // we need the next pointer event to re-enter this block and start the hold.
+    lastTileIdRef.current = disabled ? null : tileId
 
     // Don't restart hold on an already-confirmed tile (prevents progress bar re-appearing)
     const { sport, day, time } = selRef.current
