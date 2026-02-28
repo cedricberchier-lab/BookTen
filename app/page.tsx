@@ -503,9 +503,13 @@ export default function HomePage() {
                             <div
                               onClick={() => handleSlotClick(slot)}
                               title={slot.occupants}
-                              className={`rounded-xl border py-3 text-center text-xs transition-colors ${statusColor(slot.status)}`}
+                              className={`rounded-xl border py-2 text-center text-xs transition-colors leading-tight ${statusColor(slot.status)}`}
                             >
-                              {slot.occupants ? slot.occupants : statusLabel(slot.status)}
+                              {slot.occupants
+                                ? slot.occupants.split(" / ").map((name, i) => (
+                                    <div key={i}>{name}</div>
+                                  ))
+                                : statusLabel(slot.status)}
                             </div>
                           </td>
                         )

@@ -98,15 +98,19 @@ export function parseFairplayHtml(html: string, displayName?: string): Availabil
       const classes = $(cell).attr("class") ?? ""
       let status = getSlotStatus(classes)
 
-      // Clean up multi-line titles (club_annuelle, padel doubles entries)
+      // Extract all names from multi-line title attribute
       const rawTitle = $(cell).attr("title")?.trim() ?? ""
-      const occupants = rawTitle ? rawTitle.split("\n")[0].trim() || undefined : undefined
+      const names = rawTitle
+        .split("\n")
+        .map((n) => n.trim())
+        .filter(Boolean)
+      const occupants = names.length > 0 ? names.join(" / ") : undefined
 
-      // Mark as "mine" if occupants contains the user's display name
+      // Mark as "mine" if ANY name matches the user's display name
       if (
         status === "booked" &&
         displayName &&
-        occupants?.toLowerCase().includes(displayName.toLowerCase())
+        names.some((n) => n.toLowerCase().includes(displayName.toLowerCase()))
       ) {
         status = "mine"
       }
