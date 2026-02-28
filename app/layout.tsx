@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "@/styles/globals.css";
+import BottomNav from "@/components/BottomNav";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -14,8 +15,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Techstack Template 1",
-  description: "Reusable Next.js + Neon + Drizzle starter template"
+  title: "BookTen",
+  description: "FairPlay court availability"
 };
 
 export default function RootLayout({
@@ -25,8 +26,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${plexMono.variable}`}>
-      <body className="min-h-screen antialiased">
+      <body className="min-h-screen antialiased pb-16">
         {children}
+        <BottomNav />
       </body>
     </html>
   );
