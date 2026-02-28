@@ -464,67 +464,79 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Grid */}
-        {!loading && data && data.slots.length > 0 && (() => {
-          const visibleTimes = data.times.filter((t) => {
-            const h = parseInt(t.split(":")[0] ?? "0", 10)
+        {/* Cards */}
+        {!loading && data && (() => {
+          const filtered = data.slots.filter((s) => {
+            if (s.status !== "free" && s.status !== "mine") return false
+            const h = parseInt(s.startTime.split(":")[0] ?? "0", 10)
             return h >= fromHour && h <= toHour
           })
+
+          const byCourt = data.courts
+            .map((court) => ({
+              court,
+              slots: filtered.filter((s) => s.court === court),
+            }))
+            .filter((g) => g.slots.length > 0)
+
+          if (byCourt.length === 0) return (
+            <p className="text-center text-sm text-gray-400 py-10">
+              Aucun créneau libre
+            </p>
+          )
+
           return (
-            <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 whitespace-nowrap">Heure</th>
-                    {data.courts.map((court) => (
-                      <th key={court} className="px-3 py-2.5 text-center text-xs font-medium text-gray-500 whitespace-nowrap">
-                        {court}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleTimes.map((time) => (
-                    <tr key={time} className="border-b border-gray-50 last:border-0">
-                      <td className="px-3 py-1.5 font-mono text-xs text-gray-400 whitespace-nowrap">
-                        {time}
-                      </td>
-                      {data.courts.map((court) => {
-                        const slot = data.slots.find(
-                          (s) => s.court === court && s.startTime === time
-                        )
-                        if (!slot) return (
-                          <td key={court} className="px-1 py-1">
-                            <div className="rounded-xl border border-gray-100 bg-gray-50 py-3 text-center text-xs text-gray-300">—</div>
-                          </td>
-                        )
-                        return (
-                          <td key={court} className="px-1 py-1">
-                            <div
-                              onClick={() => handleSlotClick(slot)}
-                              title={slot.occupants}
-                              className={`rounded-xl border py-2 text-center text-xs transition-colors leading-tight ${statusColor(slot.status)}`}
-                            >
-                              {slot.occupants
-                                ? slot.occupants.split(" / ").map((name, i) => (
-                                    <div key={i}>{name}</div>
-                                  ))
-                                : statusLabel(slot.status)}
-                            </div>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-2">
+              {byCourt.map((group) => (
+                <div key={group.court} className="flex gap-2 items-stretch">
+
+                  {/* Left: court name card — spans full group height */}
+                  <div className="w-[30%] bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center p-3">
+                    <span className="font-bold text-base text-gray-900 text-center leading-tight">
+                      {group.court}
+                    </span>
+                  </div>
+
+                  {/* Right: day + time pairs */}
+                  <div className="flex-1 grid grid-cols-2 gap-2">
+                    {group.slots.flatMap((slot) => {
+                      const [hh, mm] = slot.startTime.split(":")
+                      const timeLabel = `${parseInt(hh ?? "0", 10)}.${mm ?? "00"}`
+                      const isMine = slot.status === "mine"
+                      return [
+                        <div
+                          key={`day-${slot.startTime}`}
+                          className="bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center py-5"
+                        >
+                          <span className="font-semibold text-sm text-gray-500">
+                            {activeDayAbbr}
+                          </span>
+                        </div>,
+                        <div
+                          key={`time-${slot.startTime}`}
+                          onClick={() => handleSlotClick(slot)}
+                          className={`rounded-2xl shadow-sm border flex items-center justify-center py-5 ${
+                            isMine
+                              ? "bg-blue-50 border-blue-200"
+                              : "bg-white border-gray-100 cursor-pointer active:bg-emerald-50 active:border-emerald-200"
+                          }`}
+                        >
+                          <span className={`font-bold text-xl ${isMine ? "text-blue-600" : "text-gray-900"}`}>
+                            {timeLabel}
+                          </span>
+                        </div>,
+                      ]
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )
         })()}
 
         {/* Legend */}
         {data && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-400 pt-1">
+          <div className="flex gap-4 text-xs text-gray-400 pt-1">
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-2.5 rounded-full border border-emerald-200 bg-emerald-50" />
               Libre
@@ -532,10 +544,6 @@ export default function HomePage() {
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-2.5 rounded-full border border-blue-200 bg-blue-50" />
               Ma réservation
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full border border-red-100 bg-red-50" />
-              Occupé
             </span>
           </div>
         )}
